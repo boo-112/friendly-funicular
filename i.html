@@ -1,0 +1,783 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="color-scheme" content="dark light" />
+  <title>In-App Browser Debugger</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #11182b;
+      --panel2: #172036;
+      --text: #e8edf7;
+      --muted: #9eabc2;
+      --border: #27324b;
+      --accent: #7aa2ff;
+      --good: #69db9b;
+      --warn: #ffd166;
+      --bad: #ff7b7b;
+      --code: #0a0f1b;
+      --shadow: 0 12px 32px rgba(0,0,0,.28);
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f3f6fb;
+        --panel: #ffffff;
+        --panel2: #f7f9fd;
+        --text: #162033;
+        --muted: #657087;
+        --border: #dbe2ef;
+        --accent: #315fd3;
+        --good: #16784a;
+        --warn: #8a6200;
+        --bad: #b42318;
+        --code: #f6f8fc;
+        --shadow: 0 12px 32px rgba(31,50,81,.10);
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      padding: max(16px, env(safe-area-inset-top)) 16px 16px;
+      background: color-mix(in srgb, var(--bg) 88%, transparent);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+    }
+    .wrap { max-width: 1180px; margin: 0 auto; }
+    h1 { font-size: 22px; margin: 0 0 6px; }
+    .sub { color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .toolbar {
+      display: grid;
+      grid-template-columns: minmax(180px, 1fr) repeat(4, auto);
+      gap: 8px;
+      margin-top: 14px;
+    }
+    input, button, select {
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font: inherit;
+    }
+    button { cursor: pointer; }
+    button:hover { border-color: var(--accent); }
+    main { padding: 18px 16px 50px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 14px;
+    }
+    .card {
+      grid-column: span 12;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    @media (min-width: 860px) {
+      .half { grid-column: span 6; }
+    }
+    .card h2 {
+      font-size: 15px;
+      margin: 0;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel2);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+    .content { padding: 14px 16px; }
+    .kv {
+      display: grid;
+      grid-template-columns: minmax(130px, 220px) 1fr;
+      gap: 8px 14px;
+      font-size: 13px;
+    }
+    .k { color: var(--muted); overflow-wrap: anywhere; }
+    .v { overflow-wrap: anywhere; white-space: pre-wrap; }
+    .pill {
+      display: inline-block;
+      padding: 3px 8px;
+      margin: 2px 4px 2px 0;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 12px;
+      background: var(--panel2);
+    }
+    .good { color: var(--good); }
+    .warn { color: var(--warn); }
+    .bad { color: var(--bad); }
+    pre {
+      margin: 0;
+      background: var(--code);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      overflow: auto;
+      max-height: 420px;
+      font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    details {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      margin: 8px 0;
+      overflow: hidden;
+      background: var(--panel2);
+    }
+    summary {
+      cursor: pointer;
+      padding: 10px 12px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    details > div { padding: 0 12px 12px; }
+    .count { color: var(--muted); font-weight: 400; font-size: 12px; }
+    .hidden { display: none !important; }
+    .logrow {
+      display: grid;
+      grid-template-columns: 92px 90px 1fr;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    .logrow:last-child { border-bottom: 0; }
+    .small { font-size: 12px; color: var(--muted); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    @media (max-width: 720px) {
+      .toolbar { grid-template-columns: 1fr 1fr; }
+      .toolbar input { grid-column: 1 / -1; }
+      .kv { grid-template-columns: 1fr; }
+      .k { margin-top: 6px; }
+      .logrow { grid-template-columns: 72px 72px 1fr; }
+    }
+  </style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>In-App Browser Debugger</h1>
+    <div class="sub">
+      Local inspection only. Nothing is transmitted. Useful for spotting injected globals, mobile bridges,
+      wallet providers, overridden APIs, storage, message traffic, navigation hooks and network activity.
+    </div>
+    <div class="toolbar">
+      <input id="search" placeholder="Filter keys, values, logs…" autocomplete="off" />
+      <button id="refresh">Refresh snapshot</button>
+      <button id="copy">Copy JSON</button>
+      <button id="download">Download JSON</button>
+      <button id="clearLogs">Clear logs</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="grid">
+    <section class="card">
+      <h2>Environment <span id="capturedAt" class="count"></span></h2>
+      <div id="environment" class="content kv"></div>
+    </section>
+
+    <section class="card half">
+      <h2>Detected integrations</h2>
+      <div id="integrations" class="content"></div>
+    </section>
+
+    <section class="card half">
+      <h2>Capabilities</h2>
+      <div id="capabilities" class="content kv"></div>
+    </section>
+
+    <section class="card">
+      <h2>Injected / unusual window globals <span id="unusualCount" class="count"></span></h2>
+      <div id="unusualGlobals" class="content"></div>
+    </section>
+
+    <section class="card">
+      <h2>Known sensitive globals</h2>
+      <div id="knownGlobals" class="content"></div>
+    </section>
+
+    <section class="card half">
+      <h2>Potentially overridden native APIs</h2>
+      <div id="nativeOverrides" class="content"></div>
+    </section>
+
+    <section class="card half">
+      <h2>Storage and document state</h2>
+      <div id="storage" class="content"></div>
+    </section>
+
+    <section class="card">
+      <h2>Window properties and descriptors <span id="windowCount" class="count"></span></h2>
+      <div id="windowTree" class="content"></div>
+    </section>
+
+    <section class="card">
+      <h2>Navigator properties and descriptors <span id="navigatorCount" class="count"></span></h2>
+      <div id="navigatorTree" class="content"></div>
+    </section>
+
+    <section class="card">
+      <h2>Live activity log <span class="count">message, fetch, XHR, history, console, errors, visibility</span></h2>
+      <div id="logs" class="content"></div>
+    </section>
+
+    <section class="card">
+      <h2>Raw snapshot</h2>
+      <div class="content"><pre id="raw"></pre></div>
+    </section>
+  </div>
+</main>
+
+<script>
+(() => {
+  "use strict";
+
+  const state = {
+    snapshot: null,
+    logs: [],
+    baselineWindowKeys: new Set([
+      "window","self","document","name","location","customElements","history","navigation","locationbar",
+      "menubar","personalbar","scrollbars","statusbar","toolbar","status","closed","frames","length","top",
+      "opener","parent","frameElement","navigator","origin","external","screen","innerWidth","innerHeight",
+      "scrollX","pageXOffset","scrollY","pageYOffset","visualViewport","screenX","screenY","outerWidth",
+      "outerHeight","devicePixelRatio","clientInformation","screenLeft","screenTop","styleMedia","onsearch",
+      "trustedTypes","performance","crypto","indexedDB","sessionStorage","localStorage","alert","confirm",
+      "prompt","print","postMessage","captureEvents","releaseEvents","getComputedStyle","matchMedia",
+      "moveTo","moveBy","resizeTo","resizeBy","scroll","scrollTo","scrollBy","getSelection","find",
+      "stop","open","close","focus","blur","queueMicrotask","reportError","setTimeout","clearTimeout",
+      "setInterval","clearInterval","requestAnimationFrame","cancelAnimationFrame","requestIdleCallback",
+      "cancelIdleCallback","fetch","structuredClone","atob","btoa","onafterprint","onbeforeprint",
+      "onbeforeunload","onhashchange","onlanguagechange","onmessage","onmessageerror","onoffline","ononline",
+      "onpagehide","onpageshow","onpopstate","onrejectionhandled","onstorage","onunhandledrejection","onunload"
+    ])
+  };
+
+  const knownPaths = [
+    "ethereum", "solana", "phantom", "Phantom", "trustwallet", "trustWallet",
+    "okxwallet", "okxWallet", "coinbaseWalletExtension", "coinbaseSolana",
+    "keplr", "leap", "rabby", "Backpack", "backpack",
+    "ReactNativeWebView", "webkit", "chrome", "Android", "android",
+    "flutter_inappwebview", "flutter", "webkit.messageHandlers",
+    "Telegram", "Telegram.WebApp", "DiscordNative", "webkit.messageHandlers",
+    "webkit.messageHandlers.bridge", "webkit.messageHandlers.ReactNativeWebView",
+    "NativeBridge", "JSBridge", "WebViewJavascriptBridge"
+  ];
+
+  const apiChecks = [
+    ["window.fetch", () => window.fetch],
+    ["window.postMessage", () => window.postMessage],
+    ["history.pushState", () => history.pushState],
+    ["history.replaceState", () => history.replaceState],
+    ["XMLHttpRequest.prototype.open", () => XMLHttpRequest.prototype.open],
+    ["XMLHttpRequest.prototype.send", () => XMLHttpRequest.prototype.send],
+    ["EventTarget.prototype.addEventListener", () => EventTarget.prototype.addEventListener],
+    ["console.log", () => console.log],
+    ["navigator.sendBeacon", () => navigator.sendBeacon]
+  ];
+
+  function now() {
+    return new Date().toISOString();
+  }
+
+  function typeOf(value) {
+    if (value === null) return "null";
+    if (Array.isArray(value)) return "array";
+    return typeof value;
+  }
+
+  function safeString(value, depth = 0, seen = new WeakSet()) {
+    try {
+      const t = typeof value;
+      if (value === null || t === "number" || t === "boolean" || t === "string") return value;
+      if (t === "undefined") return "[undefined]";
+      if (t === "bigint") return value.toString() + "n";
+      if (t === "symbol") return value.toString();
+      if (t === "function") return `[Function ${value.name || "anonymous"}]`;
+      if (depth > 2) return `[${Object.prototype.toString.call(value)}]`;
+      if (typeof value === "object") {
+        if (seen.has(value)) return "[Circular]";
+        seen.add(value);
+        if (value instanceof Error) return {name: value.name, message: value.message, stack: value.stack};
+        if (value instanceof Node) return `[${value.nodeName}]`;
+        if (Array.isArray(value)) return value.slice(0, 50).map(v => safeString(v, depth + 1, seen));
+        const out = {};
+        for (const key of Object.getOwnPropertyNames(value).slice(0, 80)) {
+          try { out[key] = safeString(value[key], depth + 1, seen); }
+          catch (e) { out[key] = `[Throws: ${e.message}]`; }
+        }
+        return out;
+      }
+      return String(value);
+    } catch (e) {
+      return `[Unserializable: ${e.message}]`;
+    }
+  }
+
+  function describeObject(obj, limit = 500) {
+    const entries = [];
+    let names = [];
+    try { names = Object.getOwnPropertyNames(obj).slice(0, limit); }
+    catch (e) { return [{key: "[error]", error: e.message}]; }
+
+    for (const key of names) {
+      const item = { key };
+      try {
+        const d = Object.getOwnPropertyDescriptor(obj, key);
+        item.descriptor = {
+          configurable: !!d?.configurable,
+          enumerable: !!d?.enumerable,
+          writable: "writable" in (d || {}) ? !!d.writable : undefined,
+          getter: !!d?.get,
+          setter: !!d?.set
+        };
+        let value;
+        try { value = obj[key]; }
+        catch (e) {
+          item.type = "throws";
+          item.preview = `[Throws: ${e.message}]`;
+          entries.push(item);
+          continue;
+        }
+        item.type = typeOf(value);
+        item.preview = preview(value);
+      } catch (e) {
+        item.error = e.message;
+      }
+      entries.push(item);
+    }
+    return entries;
+  }
+
+  function preview(value) {
+    try {
+      if (value === null) return "null";
+      const t = typeof value;
+      if (t === "string") return value.length > 250 ? value.slice(0, 250) + "…" : value;
+      if (["number","boolean","bigint","undefined"].includes(t)) return String(value);
+      if (t === "function") {
+        const s = Function.prototype.toString.call(value);
+        return s.length > 300 ? s.slice(0, 300) + "…" : s;
+      }
+      if (Array.isArray(value)) return `Array(${value.length}) ${JSON.stringify(safeString(value)).slice(0,250)}`;
+      const tag = Object.prototype.toString.call(value);
+      const keys = Object.getOwnPropertyNames(value).slice(0, 15);
+      return `${tag} keys=[${keys.join(", ")}${Object.getOwnPropertyNames(value).length > 15 ? ", …" : ""}]`;
+    } catch (e) {
+      return `[Preview error: ${e.message}]`;
+    }
+  }
+
+  function getPath(path) {
+    const parts = path.split(".");
+    let cur = window;
+    for (const p of parts) {
+      if (cur == null || !(p in cur)) return { exists: false };
+      try { cur = cur[p]; }
+      catch (e) { return { exists: true, error: e.message }; }
+    }
+    return { exists: true, value: cur, type: typeOf(cur), preview: preview(cur) };
+  }
+
+  function isNative(fn) {
+    if (typeof fn !== "function") return null;
+    try {
+      return /\{\s*\[native code\]\s*\}/.test(Function.prototype.toString.call(fn));
+    } catch {
+      return null;
+    }
+  }
+
+  async function permissionsSnapshot() {
+    const names = ["geolocation","notifications","camera","microphone","clipboard-read","clipboard-write"];
+    const out = {};
+    if (!navigator.permissions?.query) return out;
+    for (const name of names) {
+      try {
+        out[name] = (await navigator.permissions.query({name})).state;
+      } catch (e) {
+        out[name] = `unsupported: ${e.message}`;
+      }
+    }
+    return out;
+  }
+
+  function storageSnapshot() {
+    const collect = (s) => {
+      const out = {};
+      try {
+        for (let i = 0; i < s.length; i++) {
+          const k = s.key(i);
+          out[k] = s.getItem(k);
+        }
+      } catch (e) {
+        out.__error = e.message;
+      }
+      return out;
+    };
+    return {
+      cookies: (() => { try { return document.cookie; } catch (e) { return `[error: ${e.message}]`; } })(),
+      localStorage: collect(localStorage),
+      sessionStorage: collect(sessionStorage)
+    };
+  }
+
+  function capabilitySnapshot() {
+    return {
+      touch: ("ontouchstart" in window) || navigator.maxTouchPoints > 0,
+      maxTouchPoints: navigator.maxTouchPoints,
+      standalone: !!navigator.standalone,
+      secureContext: window.isSecureContext,
+      crossOriginIsolated: window.crossOriginIsolated,
+      serviceWorker: !!navigator.serviceWorker,
+      webShare: !!navigator.share,
+      clipboard: !!navigator.clipboard,
+      bluetooth: !!navigator.bluetooth,
+      usb: !!navigator.usb,
+      serial: !!navigator.serial,
+      hid: !!navigator.hid,
+      nfc: !!window.NDEFReader,
+      webAuthn: !!window.PublicKeyCredential,
+      paymentRequest: !!window.PaymentRequest,
+      indexedDB: !!window.indexedDB,
+      webCrypto: !!window.crypto?.subtle,
+      mediaDevices: !!navigator.mediaDevices,
+      geolocation: !!navigator.geolocation
+    };
+  }
+
+  function unusualGlobals(windowEntries) {
+    const commonPrefixes = /^(on|webkit|moz|ms|HTML|SVG|CSS|RTC|IDB|WebGL|Audio|Media|Animation|DOM|XPath|XML|URL|Intl|Math|JSON|Object|Array|Number|String|Boolean|Date|RegExp|Error|Promise|Map|Set|Weak|BigInt|Symbol|Reflect|Proxy|Atomics|SharedArrayBuffer|DataView|Uint|Int|Float|Text|Blob|File|FormData|Headers|Request|Response|Event|CustomEvent|MouseEvent|KeyboardEvent|TouchEvent|PointerEvent|Node|Element|Document|Window|Screen|Navigator|Performance|Crypto|Storage|History|Location|Worker|Message|ReadableStream|WritableStream|TransformStream|CompressionStream|DecompressionStream|Abort|URLPattern|BarcodeDetector|EyeDropper)/;
+    return windowEntries.filter(({key}) =>
+      !state.baselineWindowKeys.has(key) &&
+      !commonPrefixes.test(key) &&
+      !/^[A-Z][A-Za-z0-9]+$/.test(key)
+    );
+  }
+
+  function addLog(kind, detail) {
+    state.logs.unshift({
+      time: new Date().toLocaleTimeString(),
+      kind,
+      detail: safeString(detail)
+    });
+    if (state.logs.length > 300) state.logs.length = 300;
+    renderLogs();
+  }
+
+  function installHooks() {
+    if (window.__inAppDebuggerHooksInstalled) return;
+    Object.defineProperty(window, "__inAppDebuggerHooksInstalled", { value: true, configurable: false });
+
+    window.addEventListener("message", e => addLog("message", {
+      origin: e.origin,
+      sourceIsParent: e.source === parent,
+      sourceIsOpener: e.source === opener,
+      data: e.data
+    }), true);
+
+    window.addEventListener("error", e => addLog("error", {
+      message: e.message, filename: e.filename, lineno: e.lineno, colno: e.colno, error: e.error
+    }), true);
+
+    window.addEventListener("unhandledrejection", e => addLog("promise", { reason: e.reason }), true);
+    document.addEventListener("visibilitychange", () => addLog("visibility", document.visibilityState), true);
+    window.addEventListener("hashchange", () => addLog("hashchange", location.href), true);
+    window.addEventListener("popstate", e => addLog("popstate", {href: location.href, state: e.state}), true);
+
+    const originalFetch = window.fetch;
+    if (typeof originalFetch === "function") {
+      window.fetch = async function(...args) {
+        const started = performance.now();
+        addLog("fetch", {phase: "request", input: args[0], init: args[1]});
+        try {
+          const res = await originalFetch.apply(this, args);
+          addLog("fetch", {
+            phase: "response", url: res.url, status: res.status,
+            type: res.type, durationMs: Math.round(performance.now() - started)
+          });
+          return res;
+        } catch (e) {
+          addLog("fetch", {phase: "error", error: e.message});
+          throw e;
+        }
+      };
+    }
+
+    const xhrOpen = XMLHttpRequest.prototype.open;
+    const xhrSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+      this.__debugMeta = {method, url};
+      return xhrOpen.call(this, method, url, ...rest);
+    };
+    XMLHttpRequest.prototype.send = function(body) {
+      const meta = this.__debugMeta || {};
+      addLog("xhr", {phase: "request", ...meta, body});
+      this.addEventListener("loadend", () => addLog("xhr", {
+        phase: "response", ...meta, status: this.status, responseURL: this.responseURL
+      }), {once: true});
+      return xhrSend.call(this, body);
+    };
+
+    for (const method of ["pushState", "replaceState"]) {
+      const original = history[method];
+      history[method] = function(stateArg, title, url) {
+        addLog("history", {method, state: stateArg, title, url});
+        return original.apply(this, arguments);
+      };
+    }
+
+    const originalPostMessage = window.postMessage;
+    window.postMessage = function(message, targetOrigin, transfer) {
+      addLog("postMessage", {message, targetOrigin});
+      return originalPostMessage.apply(this, arguments);
+    };
+
+    for (const level of ["log","info","warn","error","debug"]) {
+      const original = console[level];
+      console[level] = function(...args) {
+        addLog(`console.${level}`, args);
+        return original.apply(this, args);
+      };
+    }
+  }
+
+  async function buildSnapshot() {
+    const windowEntries = describeObject(window, 1200);
+    const navigatorEntries = describeObject(navigator, 500);
+    const known = Object.fromEntries(knownPaths.map(p => [p, getPath(p)]));
+    const overrides = {};
+    for (const [name, getter] of apiChecks) {
+      try {
+        const fn = getter();
+        overrides[name] = {
+          type: typeof fn,
+          native: isNative(fn),
+          preview: preview(fn)
+        };
+      } catch (e) {
+        overrides[name] = { error: e.message };
+      }
+    }
+
+    return {
+      capturedAt: now(),
+      environment: {
+        href: location.href,
+        origin: location.origin,
+        referrer: document.referrer,
+        title: document.title,
+        userAgent: navigator.userAgent,
+        vendor: navigator.vendor,
+        platform: navigator.platform,
+        language: navigator.language,
+        languages: navigator.languages,
+        cookieEnabled: navigator.cookieEnabled,
+        online: navigator.onLine,
+        hardwareConcurrency: navigator.hardwareConcurrency,
+        deviceMemory: navigator.deviceMemory,
+        maxTouchPoints: navigator.maxTouchPoints,
+        screen: `${screen.width}×${screen.height}`,
+        viewport: `${innerWidth}×${innerHeight}`,
+        devicePixelRatio: window.devicePixelRatio,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        colorScheme: matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
+        embedded: window.top !== window.self,
+        opener: !!window.opener,
+        visibilityState: document.visibilityState
+      },
+      capabilities: capabilitySnapshot(),
+      permissions: await permissionsSnapshot(),
+      integrations: known,
+      nativeOverrides: overrides,
+      storage: storageSnapshot(),
+      unusualGlobals: unusualGlobals(windowEntries),
+      windowProperties: windowEntries,
+      navigatorProperties: navigatorEntries,
+      logs: state.logs
+    };
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, c => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+    }[c]));
+  }
+
+  function renderKV(el, obj) {
+    el.innerHTML = Object.entries(obj).map(([k,v]) =>
+      `<div class="k searchable">${esc(k)}</div><div class="v searchable">${esc(typeof v === "object" ? JSON.stringify(v, null, 2) : v)}</div>`
+    ).join("");
+  }
+
+  function renderIntegrations() {
+    const el = document.getElementById("integrations");
+    const found = Object.entries(state.snapshot.integrations).filter(([,v]) => v.exists);
+    if (!found.length) {
+      el.innerHTML = `<span class="small">No known wallet or app bridge globals detected.</span>`;
+      return;
+    }
+    el.innerHTML = found.map(([path, info]) =>
+      `<span class="pill searchable ${info.error ? "bad" : "good"}">${esc(path)} · ${esc(info.type || "error")}</span>`
+    ).join("");
+  }
+
+  function renderEntries(el, entries) {
+    if (!entries.length) {
+      el.innerHTML = `<span class="small">None found.</span>`;
+      return;
+    }
+    el.innerHTML = entries.map(item => {
+      const d = item.descriptor || {};
+      const flags = [
+        d.enumerable ? "enumerable" : "non-enumerable",
+        d.configurable ? "configurable" : "fixed",
+        d.getter ? "getter" : "",
+        d.setter ? "setter" : "",
+        d.writable === true ? "writable" : d.writable === false ? "readonly" : ""
+      ].filter(Boolean).join(", ");
+      return `<details class="searchable">
+        <summary>${esc(item.key)} <span class="count">${esc(item.type || "")}</span></summary>
+        <div>
+          <div class="small">${esc(flags)}</div>
+          <pre>${esc(item.preview || item.error || "")}</pre>
+        </div>
+      </details>`;
+    }).join("");
+  }
+
+  function renderKnownGlobals() {
+    const el = document.getElementById("knownGlobals");
+    el.innerHTML = Object.entries(state.snapshot.integrations).map(([path, info]) => `
+      <details class="searchable">
+        <summary>${esc(path)} <span class="count ${info.exists ? "good" : ""}">${info.exists ? "present" : "absent"}</span></summary>
+        <div><pre>${esc(JSON.stringify(info, null, 2))}</pre></div>
+      </details>`).join("");
+  }
+
+  function renderOverrides() {
+    const el = document.getElementById("nativeOverrides");
+    el.innerHTML = Object.entries(state.snapshot.nativeOverrides).map(([name, info]) => {
+      const cls = info.native === false ? "warn" : info.native === true ? "good" : "";
+      const label = info.native === false ? "not native" : info.native === true ? "native" : "unknown";
+      return `<details class="searchable">
+        <summary>${esc(name)} <span class="count ${cls}">${label}</span></summary>
+        <div><pre>${esc(JSON.stringify(info, null, 2))}</pre></div>
+      </details>`;
+    }).join("");
+  }
+
+  function renderStorage() {
+    const s = state.snapshot.storage;
+    document.getElementById("storage").innerHTML = `
+      <details class="searchable"><summary>Cookies</summary><div><pre>${esc(s.cookies || "(none)")}</pre></div></details>
+      <details class="searchable"><summary>localStorage <span class="count">${Object.keys(s.localStorage).length}</span></summary><div><pre>${esc(JSON.stringify(s.localStorage, null, 2))}</pre></div></details>
+      <details class="searchable"><summary>sessionStorage <span class="count">${Object.keys(s.sessionStorage).length}</span></summary><div><pre>${esc(JSON.stringify(s.sessionStorage, null, 2))}</pre></div></details>
+      <details class="searchable"><summary>Permissions</summary><div><pre>${esc(JSON.stringify(state.snapshot.permissions, null, 2))}</pre></div></details>
+    `;
+  }
+
+  function renderLogs() {
+    const el = document.getElementById("logs");
+    if (!state.logs.length) {
+      el.innerHTML = `<span class="small">No activity captured yet.</span>`;
+      return;
+    }
+    el.innerHTML = state.logs.map(log => `
+      <div class="logrow searchable">
+        <div>${esc(log.time)}</div>
+        <div>${esc(log.kind)}</div>
+        <div>${esc(JSON.stringify(log.detail))}</div>
+      </div>`).join("");
+    applyFilter();
+  }
+
+  function render() {
+    const s = state.snapshot;
+    document.getElementById("capturedAt").textContent = s.capturedAt;
+    renderKV(document.getElementById("environment"), s.environment);
+    renderKV(document.getElementById("capabilities"), s.capabilities);
+    renderIntegrations();
+    renderEntries(document.getElementById("unusualGlobals"), s.unusualGlobals);
+    renderKnownGlobals();
+    renderOverrides();
+    renderStorage();
+    renderEntries(document.getElementById("windowTree"), s.windowProperties);
+    renderEntries(document.getElementById("navigatorTree"), s.navigatorProperties);
+    document.getElementById("unusualCount").textContent = s.unusualGlobals.length;
+    document.getElementById("windowCount").textContent = s.windowProperties.length;
+    document.getElementById("navigatorCount").textContent = s.navigatorProperties.length;
+    document.getElementById("raw").textContent = JSON.stringify(s, null, 2);
+    renderLogs();
+    applyFilter();
+  }
+
+  function applyFilter() {
+    const q = document.getElementById("search").value.trim().toLowerCase();
+    document.querySelectorAll(".searchable").forEach(el => {
+      el.classList.toggle("hidden", q && !el.textContent.toLowerCase().includes(q));
+    });
+  }
+
+  async function refresh() {
+    state.snapshot = await buildSnapshot();
+    render();
+  }
+
+  async function copyJSON() {
+    const text = JSON.stringify({...state.snapshot, logs: state.logs}, null, 2);
+    try {
+      await navigator.clipboard.writeText(text);
+      addLog("ui", "Snapshot copied to clipboard");
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+      addLog("ui", "Snapshot copied using fallback");
+    }
+  }
+
+  function downloadJSON() {
+    const blob = new Blob([JSON.stringify({...state.snapshot, logs: state.logs}, null, 2)], {type: "application/json"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `in-app-browser-debug-${new Date().toISOString().replace(/[:.]/g,"-")}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  document.getElementById("search").addEventListener("input", applyFilter);
+  document.getElementById("refresh").addEventListener("click", refresh);
+  document.getElementById("copy").addEventListener("click", copyJSON);
+  document.getElementById("download").addEventListener("click", downloadJSON);
+  document.getElementById("clearLogs").addEventListener("click", () => {
+    state.logs = [];
+    if (state.snapshot) state.snapshot.logs = state.logs;
+    renderLogs();
+  });
+
+  installHooks();
+  refresh();
+})();
+</script>
+</body>
+</html>
